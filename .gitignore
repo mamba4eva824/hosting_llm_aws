@@ -1,0 +1,14 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+# .terraform.lock.hcl — intentionally tracked for reproducible builds
+terraform.tfvars
+crash.log
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
