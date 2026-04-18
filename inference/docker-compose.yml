@@ -1,0 +1,8 @@
+services:
+  inference:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      OLLAMA_MODEL: gemma2:2b
+      OLLAMA_BASE_URL: http://127.0.0.1:11434

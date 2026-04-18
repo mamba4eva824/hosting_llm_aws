@@ -23,7 +23,12 @@ output "instance_public_ip" {
   value       = module.compute.instance_public_ip
 }
 
-output "ollama_api_url" {
-  description = "URL for the Ollama API"
-  value       = module.compute.ollama_api_url
+output "ecr_repository_url" {
+  description = "ECR repository URL for the inference image (build and push before first instance boot, or re-run user_data)"
+  value       = aws_ecr_repository.inference.repository_url
+}
+
+output "inference_app_url" {
+  description = "URL for FastAPI (proxies to Ollama in the container)"
+  value       = module.compute.inference_app_url
 }

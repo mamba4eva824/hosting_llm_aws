@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Deploy Ollama serving Gemma 2B on a CPU-based EC2 instance, fully managed with Terraform and automated via GitHub Actions CI/CD.
+Deploy a Docker image on EC2: FastAPI on port **5000** proxies to Ollama (Gemma 2B) inside the container, fully managed with Terraform and automated via GitHub Actions CI/CD.
 
 This is a learning project. Prioritize clarity, cost-safety, and clean infrastructure patterns over production hardening.
 
@@ -19,15 +19,15 @@ Terraform Cloud / S3 Backend
 │                                         │
 │   Public Subnet (single AZ)             │
 │   ┌───────────────────────────────┐     │
-│   │  EC2 t3.xlarge                │     │
+│   │  EC2 t3.xlarge · Docker     │     │
 │   │  ┌─────────────────────────┐  │     │
-│   │  │  Ollama                 │  │     │
+│   │  │  FastAPI :5000          │  │     │
+│   │  │  → Ollama :11434        │  │     │
 │   │  │  (gemma2:2b)            │  │     │
-│   │  │  Port 11434             │  │     │
 │   │  └─────────────────────────┘  │     │
 │   └───────────────────────────────┘     │
 │                                         │
-│   Security Group: 22 (SSH), 11434 (API) │
+│   Security Group: 22 (SSH), 5000 (API)  │
 └─────────────────────────────────────────┘
 ```
 
@@ -35,7 +35,7 @@ Terraform Cloud / S3 Backend
 
 - **IaC**: Terraform (~> 1.5) with AWS provider
 - **Compute**: EC2 t3.xlarge (4 vCPU, 16GB RAM) — CPU inference
-- **Runtime**: Ollama (native binary, no Docker required)
+- **Runtime**: Docker on EC2 — Ollama + FastAPI in one image (ECR)
 - **CI/CD**: GitHub Actions
 - **Language**: HCL (Terraform), Bash (scripts)
 - **Model**: gemma2:2b (~5-10 tokens/sec on CPU)
@@ -52,6 +52,8 @@ model_hosting_aws/
 │   ├── outputs.tf                 # Instance IP, API endpoint URL
 │   ├── terraform.tfvars.example   # Example variable values (never commit real tfvars)
 │   ├── backend.tf                 # S3 remote state config
+│   ├── ecr.tf                     # ECR repository for the inference image
+│   ├── data.tf                    # AMI lookups (Amazon Linux 2023)
 │   ├── modules/
 │   │   ├── networking/
 │   │   │   ├── main.tf            # VPC, subnet, IGW, route table, security group
@@ -61,8 +63,8 @@ model_hosting_aws/
 │   │       ├── main.tf            # EC2 instance, IAM role, user data
 │   │       ├── variables.tf
 │   │       ├── outputs.tf
-│   │       └── user_data.sh       # Bootstrap: install Ollama, pull model, start serving
-│   └── data.tf                    # AMI lookups (Amazon Linux 2023)
+│   │       └── user_data.sh.tpl   # Bootstrap: Docker pull + run inference container
+├── inference/                     # Dockerfile, FastAPI app, docker-compose
 ├── scripts/
 │   ├── shutdown.sh                # Stop instance to save cost
 │   ├── startup.sh                 # Start instance and verify Ollama health
@@ -106,15 +108,13 @@ model_hosting_aws/
 - API: OpenAI-compatible at `POST /v1/chat/completions`
 - Native Ollama API: `POST /api/generate`, `POST /api/chat`
 - Model pull: `ollama pull gemma2:2b`
-- Bind to all interfaces: `OLLAMA_HOST=0.0.0.0` (required for remote access)
-- Model weights stored in `~/.ollama/models` — persist on EBS to avoid re-downloading on restart
+- Inside the container, Ollama listens on 11434; FastAPI listens on **5000** (only 5000 is exposed on the host SG)
+- Model weights stored in container volume path `~/.ollama/models` — persist on EBS to avoid re-downloading on restart
 
 ### User Data Bootstrap Order
-1. Install Ollama
-2. Configure Ollama to listen on 0.0.0.0 (all interfaces)
-3. Start Ollama service
-4. Pull gemma2:2b model
-5. Wait for health check to pass
+1. Install Docker (and AWS CLI for ECR login)
+2. Pull inference image from ECR (or configured registry)
+3. Run container publishing port **5000**
 
 ## Key Commands
 
@@ -128,8 +128,8 @@ terraform plan -var-file=terraform.tfvars
 # Apply infrastructure
 terraform apply -var-file=terraform.tfvars
 
-# Test the Ollama endpoint (OpenAI-compatible)
-curl http://$(terraform output -raw instance_public_ip):11434/v1/chat/completions \
+# Test via FastAPI proxy (OpenAI-compatible)
+curl http://$(terraform output -raw instance_public_ip):5000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma2:2b",
@@ -137,8 +137,8 @@ curl http://$(terraform output -raw instance_public_ip):11434/v1/chat/completion
     "max_tokens": 100
   }'
 
-# Test the native Ollama API
-curl http://$(terraform output -raw instance_public_ip):11434/api/chat \
+# Test the native Ollama API (proxied under /api)
+curl http://$(terraform output -raw instance_public_ip):5000/api/chat \
   -d '{
     "model": "gemma2:2b",
     "messages": [{"role": "user", "content": "Hello, who are you?"}]
@@ -163,8 +163,8 @@ claude
 
 **Phase 1 — Scaffold**
 1. "Create the directory structure from CLAUDE.md"
-2. "Create the networking module: VPC, public subnet, internet gateway, route table, and security group allowing SSH (22) and Ollama API (11434)"
-3. "Create the compute module: t3.xlarge EC2 instance using Amazon Linux 2023 AMI, with an IAM instance profile, and user_data.sh that installs Ollama and pulls gemma2:2b"
+2. "Create the networking module: VPC, public subnet, internet gateway, route table, and security group allowing SSH (22) and FastAPI (5000)"
+3. "Create the compute module: t3.xlarge EC2 instance using Amazon Linux 2023 AMI, with an IAM instance profile, and user_data that runs the Docker inference image"
 4. "Create the root main.tf that wires networking and compute modules together, plus variables.tf, outputs.tf, and terraform.tfvars.example"
 
 **Phase 2 — CI/CD**

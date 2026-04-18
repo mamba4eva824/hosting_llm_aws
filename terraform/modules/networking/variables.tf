@@ -29,7 +29,7 @@ variable "allowed_ssh_cidr" {
 }
 
 variable "allowed_api_cidr" {
-  description = "CIDR block allowed to access the Ollama API (port 11434)"
+  description = "CIDR block allowed to access FastAPI (port 5000; Ollama is not exposed on the host)"
   type        = string
   default     = "0.0.0.0/0"
 }

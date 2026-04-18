@@ -12,7 +12,7 @@ The project was originally specced for NVIDIA NIM on a GPU instance. During Phas
 | NVIDIA NIM container | Ollama (native binary) | No Docker, no NGC account, no API keys — much less complexity |
 | g5.xlarge (A10G GPU) | t3.xlarge (CPU) | ~6x cheaper, no GPU quota needed, sufficient for small models |
 | meta/llama3-8b-instruct | gemma2:2b | Small enough for CPU inference, fits in 16GB RAM |
-| Port 8000 | Port 11434 | Ollama default port |
+| Port 8000 (NIM) | FastAPI :5000, Ollama :11434 in container | API boundary vs Ollama internal port |
 | us-east-1 | us-west-1 | User preference |
 | NVIDIA GPU-optimized AMI | Amazon Linux 2023 | No GPU drivers needed for CPU instance |
 
@@ -52,12 +52,12 @@ Used the Terraform MCP server to fetch latest AWS provider docs (v6.39.0).
 - Route table with 0.0.0.0/0 → IGW, associated to subnet
 - Security group with standalone ingress/egress rules:
   - TCP 22 (SSH) — restricted by `allowed_ssh_cidr`
-  - TCP 11434 (Ollama API) — restricted by `allowed_api_cidr`
+  - TCP 5000 (FastAPI inference API) — restricted by `allowed_api_cidr`
   - All outbound
 
 **Design note**: Used `aws_vpc_security_group_ingress_rule` / `aws_vpc_security_group_egress_rule` standalone resources instead of inline `ingress`/`egress` blocks. This is the current Terraform best practice per the provider docs.
 
-**Security feedback applied**: Added `allowed_api_cidr` variable (defaults to 0.0.0.0/0) to allow locking down the Ollama API port to a specific IP, since Ollama has no built-in auth.
+**Security feedback applied**: Added `allowed_api_cidr` variable (defaults to 0.0.0.0/0) to allow locking down the FastAPI port to a specific IP; add auth at the app/gateway for production.
 
 ### Step 3: Compute Module
 
@@ -71,22 +71,21 @@ Used the Terraform MCP server to fetch latest AWS provider docs (v6.39.0).
   - IMDSv2 required (security best practice)
   - `prevent_destroy` lifecycle rule
   - Optional spot instance via `use_spot` variable
-  - `user_data.sh` bootstraps Ollama
+  - `user_data.sh.tpl` installs Docker and runs the inference container (FastAPI :5000, Ollama inside the container on :11434)
 
-**user_data.sh** bootstrap sequence:
-1. Install Ollama via `curl -fsSL https://ollama.com/install.sh | sh`
-2. Create systemd override setting `OLLAMA_HOST=0.0.0.0`
-3. Enable + restart Ollama service
-4. Wait for health check (polls localhost:11434 up to 30s)
-5. Pull gemma2:2b model
+**user_data** bootstrap sequence:
+1. Install Docker and AWS CLI
+2. Log in to ECR when using an ECR image URI
+3. `docker pull` and `docker run` publishing port **5000**
+4. Container entrypoint starts Ollama, pulls the model, then FastAPI on :5000
 
-Ollama runs as a systemd service — it starts on boot and survives reboots.
+The container restarts with the instance (`--restart unless-stopped`).
 
 ### Step 4: Root Module Wiring
 
 - `main.tf` — AWS provider pinned to ~> 6.39, wires networking and compute modules
 - `variables.tf` — All configurable inputs with sensible defaults
-- `outputs.tf` — vpc_id, subnet_id, security_group_id, instance_id, instance_public_ip, ollama_api_url
+- `outputs.tf` — vpc_id, subnet_id, security_group_id, instance_id, instance_public_ip, ecr_repository_url, inference_app_url
 - `terraform.tfvars.example` — Documented example values
 
 ### Validation

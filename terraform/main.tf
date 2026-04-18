@@ -13,6 +13,10 @@ provider "aws" {
   region = var.aws_region
 }
 
+locals {
+  inference_image = coalesce(var.inference_image, "${aws_ecr_repository.inference.repository_url}:latest")
+}
+
 module "networking" {
   source = "./modules/networking"
 
@@ -38,8 +42,13 @@ module "compute" {
   key_name          = var.key_name
   use_spot          = var.use_spot
   root_volume_size  = var.root_volume_size
+  aws_region        = var.aws_region
+  inference_image   = local.inference_image
+  ollama_model      = var.ollama_model
 
   tags = {
     Environment = "dev"
   }
+
+  depends_on = [aws_ecr_repository.inference]
 }

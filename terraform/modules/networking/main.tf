@@ -64,7 +64,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "ollama" {
   name        = "${var.project_name}-ollama-sg"
-  description = "Allow SSH and Ollama API access"
+  description = "Allow SSH and FastAPI inference port"
   vpc_id      = aws_vpc.this.id
 
   tags = merge(local.common_tags, {
@@ -82,13 +82,13 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   ip_protocol       = "tcp"
 }
 
-# Ingress: Ollama API
-resource "aws_vpc_security_group_ingress_rule" "ollama_api" {
+# Ingress: FastAPI (API boundary — Ollama stays inside the container on 11434)
+resource "aws_vpc_security_group_ingress_rule" "inference_app" {
   security_group_id = aws_security_group.ollama.id
-  description       = "Ollama API access"
+  description       = "FastAPI inference API"
   cidr_ipv4         = var.allowed_api_cidr
-  from_port         = 11434
-  to_port           = 11434
+  from_port         = 5000
+  to_port           = 5000
   ip_protocol       = "tcp"
 }
 

@@ -13,7 +13,7 @@ output "instance_public_dns" {
   value       = aws_instance.ollama.public_dns
 }
 
-output "ollama_api_url" {
-  description = "URL for the Ollama API"
-  value       = "http://${aws_instance.ollama.public_ip}:11434"
+output "inference_app_url" {
+  description = "URL for the FastAPI app (proxies to Ollama inside the container)"
+  value       = "http://${aws_instance.ollama.public_ip}:5000"
 }

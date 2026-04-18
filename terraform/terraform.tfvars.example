@@ -5,6 +5,10 @@
 # instance_type    = "t3.xlarge"
 # key_name         = "your-key-pair-name"
 # allowed_ssh_cidr = "203.0.113.50/32"  # Your IP
-# allowed_api_cidr = "203.0.113.50/32"  # Your IP
+# allowed_api_cidr = "203.0.113.50/32"  # FastAPI on 5000
 # use_spot         = false
 # root_volume_size = 30
+#
+# Optional: override image (defaults to ECR <project>-inference:latest after apply)
+# inference_image  = "123456789012.dkr.ecr.us-west-1.amazonaws.com/ollama-learning-inference:latest"
+# ollama_model     = "gemma2:2b"

@@ -54,6 +54,11 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+resource "aws_iam_role_policy_attachment" "ecr_read" {
+  role       = aws_iam_role.ollama.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_instance_profile" "ollama" {
   name = "${var.project_name}-ollama-profile"
   role = aws_iam_role.ollama.name
@@ -71,7 +76,11 @@ resource "aws_instance" "ollama" {
   iam_instance_profile   = aws_iam_instance_profile.ollama.name
   key_name               = var.key_name
 
-  user_data                   = file("${path.module}/user_data.sh")
+  user_data = templatefile("${path.module}/user_data.sh.tpl", {
+    aws_region      = var.aws_region
+    inference_image = var.inference_image
+    ollama_model    = var.ollama_model
+  })
   user_data_replace_on_change = true
 
   root_block_device {

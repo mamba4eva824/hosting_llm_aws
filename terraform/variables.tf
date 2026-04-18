@@ -35,9 +35,22 @@ variable "allowed_ssh_cidr" {
 }
 
 variable "allowed_api_cidr" {
-  description = "CIDR block allowed to access the Ollama API (port 11434)"
+  description = "CIDR block allowed to access FastAPI (port 5000)"
   type        = string
   default     = "0.0.0.0/0"
+}
+
+variable "inference_image" {
+  description = "Optional full container image URI. Defaults to latest tag in the project ECR repository."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "ollama_model" {
+  description = "Model name for ollama pull inside the container"
+  type        = string
+  default     = "gemma2:2b"
 }
 
 variable "instance_type" {

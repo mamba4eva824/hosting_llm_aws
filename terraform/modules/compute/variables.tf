@@ -42,3 +42,19 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "aws_region" {
+  description = "AWS region (for ECR login in user_data)"
+  type        = string
+}
+
+variable "inference_image" {
+  description = "Container image URI (ECR or other registry) for FastAPI + Ollama"
+  type        = string
+}
+
+variable "ollama_model" {
+  description = "Model tag to pull inside the container (ollama pull)"
+  type        = string
+  default     = "gemma2:2b"
+}

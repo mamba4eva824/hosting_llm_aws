@@ -1,20 +1,21 @@
 # Ollama on EC2 — Self-Hosted LLM Inference
 
-Deploy Ollama serving Gemma 2B on a CPU-based EC2 instance in AWS, fully managed with Terraform and automated via GitHub Actions CI/CD.
+Deploy a **Docker** image on EC2: **FastAPI** (port **5000**) proxies to **Ollama** inside the same container (Ollama on **11434** is not exposed on the host). Infrastructure is Terraform; images live in **ECR**.
 
 ## Architecture
 
 ```
-┌──────────────── AWS VPC (us-west-1) ────────────────┐
+┌──────────────── AWS VPC (us-west-1) ──────────────────┐
 │                                                      │
 │   Public Subnet (10.0.1.0/24, us-west-1a)           │
 │   ┌──────────────────────────────────────────┐       │
-│   │  EC2 t3.xlarge · Amazon Linux 2023       │       │
-│   │  Ollama (systemd) · gemma2:2b            │       │
-│   │  Port 11434                              │       │
+│   │  EC2 · Amazon Linux 2023 · Docker        │       │
+│   │  Container: FastAPI :5000 → Ollama     │       │
+│   │  (gemma2:2b pulled in container)         │       │
 │   └──────────────────────────────────────────┘       │
 │                                                      │
-│   Security Group: SSH (22), Ollama API (11434)       │
+│   Security Group: SSH (22), FastAPI (5000)          │
+│   ECR: inference image (build + push from dev)     │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -27,30 +28,49 @@ Deploy Ollama serving Gemma 2B on a CPU-based EC2 instance in AWS, fully managed
 
 ## Quick Start
 
+1. **Create infrastructure and the empty ECR repository**
+
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
+# Edit terraform.tfvars with your values (e.g. key_name, allowed_*_cidr)
 
 terraform init
-terraform plan -var-file=terraform.tfvars
 terraform apply -var-file=terraform.tfvars
 ```
+
+2. **Build and push the inference image** (from the repo root)
+
+```bash
+chmod +x scripts/push-inference-image.sh
+./scripts/push-inference-image.sh
+```
+
+3. **If the EC2 instance already started before step 2**, replace it so `user_data` pulls the image:
+
+```bash
+cd terraform
+terraform apply -replace='module.compute.aws_instance.ollama' -var-file=terraform.tfvars
+```
+
+Optional: set `inference_image` in `terraform.tfvars` to a full URI (e.g. another registry). Otherwise the default is the project ECR URL with the `latest` tag.
 
 ## Test the API
 
 ```bash
-# Health check
-curl http://$(terraform output -raw instance_public_ip):11434/
+# Health (FastAPI → Ollama)
+curl http://$(terraform output -raw instance_public_ip):5000/health
 
-# Chat completion (OpenAI-compatible)
-curl http://$(terraform output -raw instance_public_ip):11434/v1/chat/completions \
+# Chat completion (OpenAI-compatible, proxied to Ollama)
+curl http://$(terraform output -raw instance_public_ip):5000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma2:2b",
     "messages": [{"role": "user", "content": "Hello!"}],
     "max_tokens": 100
   }'
+
+# Or use ./scripts/test-endpoint.sh
 ```
 
 ## Branching Strategy
@@ -170,14 +190,16 @@ terraform destroy -var-file=terraform.tfvars
 ## Project Structure
 
 ```
+├── inference/                  # Dockerfile, FastAPI app, docker-compose (local)
 ├── terraform/
 │   ├── main.tf                 # Provider + module wiring
+│   ├── ecr.tf                  # ECR repository for the inference image
 │   ├── variables.tf            # Root inputs
-│   ├── outputs.tf              # Instance IP, API URL
+│   ├── outputs.tf              # Instance IP, ECR URL, app URL
 │   ├── modules/
-│   │   ├── networking/         # VPC, subnet, IGW, SG
-│   │   └── compute/            # EC2, IAM, user_data.sh
-├── scripts/                    # Utility scripts
-├── .github/workflows/          # CI/CD pipelines
+│   │   ├── networking/         # VPC, subnet, IGW, SG (5000 + 22)
+│   │   └── compute/            # EC2, IAM, user_data (docker pull + run)
+├── scripts/                    # push-inference-image.sh, test-endpoint.sh, …
+├── .github/workflows/          # CI/CD pipelines (stubs)
 └── docs/                       # Architecture + build logs
 ```
